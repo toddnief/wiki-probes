@@ -10,6 +10,7 @@ dependencies:
   - pytorch-cuda=11.6=h867d48c_0
   - pytorch-mutex=1.0=cuda
   - numpy=1.23.4=py38h14f4228_0
+  - scikit-learn==1.3.0
   - seaborn=0.12.2=py38h06a4308_0
   - sentencepiece=0.1.95=py38hd09550d_0
   - pip:
