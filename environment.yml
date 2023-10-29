@@ -5,6 +5,7 @@ channels:
   - defaults
 dependencies:
   - ipykernel
+  - ipywidgets
   - pytorch=1.13.0=py3.8_cuda11.6_cudnn8.3.2_0
   - pytorch-cuda=11.6=h867d48c_0
   - pytorch-mutex=1.0=cuda
