@@ -20,10 +20,14 @@ from baukit import TraceDict
 
 class ActivationsDataset(Dataset):
     def __init__(self, Xs, titles, categories, text):
-        self.Xs = Xs
+        self._Xs = Xs
         self._titles = titles
         self._categories = categories
         self.text = text
+
+    @property
+    def Xs(self):
+        return self._Xs
 
     @property
     def titles(self):
@@ -34,10 +38,10 @@ class ActivationsDataset(Dataset):
         return self._categories
 
     def __len__(self):
-        return len(self.Xs)
+        return len(self._Xs)
 
     def __getitem__(self, idx):
-        return self.Xs[idx], self._titles[idx], self._categories[idx], self.text[idx]
+        return self._Xs[idx], self._titles[idx], self._categories[idx], self.text[idx]
 
 class Linear(nn.Module):
     # TODO: figure out better way to handle the number of classes for default
@@ -174,6 +178,8 @@ def create_dataset(hidden_states, titles, categories, text, layer=-1, aggregatio
         elif aggregation == "mean":
             x = np.mean(hs, axis=0)
 
+        Xs.append(x)
+
     Xs_t = Tensor(np.asarray(Xs)).float()
     titles_t = Tensor(np.asarray(titles)).long() # cross entropy loss wants a long dtype
     categories_t = Tensor(np.asarray(categories)).float() # binary cross entropy loss wants a float dtype
@@ -189,10 +195,12 @@ def train_handler(model, train_dataset, val_dataset, label_encoder, probe_type="
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 
+    hidden_size = next(iter(val_loader))[0].shape[1]
+
     if probe_type == "linear":
-        probe = Linear(hidden_size=model.config.hidden_size, n_classes=n_classes)
+        probe = Linear(hidden_size=hidden_size, n_classes=n_classes)
     elif probe_type == "mlp":
-        probe = MLP(hidden_size=model.config.hidden_size, n_classes=n_classes)
+        probe = MLP(hidden_size=hidden_size, n_classes=n_classes)
     probe.apply(init_weights)
 
     if labels == "categories":
