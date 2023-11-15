@@ -19,17 +19,25 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from baukit import TraceDict
 
 class ActivationsDataset(Dataset):
-    def __init__(self, Xs, title, categories, text):
+    def __init__(self, Xs, titles, categories, text):
         self.Xs = Xs
-        self.title = title
-        self.categories = categories
+        self._titles = titles
+        self._categories = categories
         self.text = text
+
+    @property
+    def titles(self):
+        return self._titles
+    
+    @property
+    def categories(self):
+        return self._categories
 
     def __len__(self):
         return len(self.Xs)
 
     def __getitem__(self, idx):
-        return self.Xs[idx], self.title[idx], self.categories[idx], self.text[idx]
+        return self.Xs[idx], self._titles[idx], self._categories[idx], self.text[idx]
 
 class Linear(nn.Module):
     # TODO: figure out better way to handle the number of classes for default
@@ -108,7 +116,8 @@ def init_weights(m):
         init.xavier_normal_(m.weight)
         init.constant_(m.bias, 0)
 
-def df_to_dataset(df, model, tokenizer, device, label_encoder_title, label_encoder_cats, layer=-1, aggregation="max", labels="title", save=False, filename="data/" + "dataset.pt"):
+# TODO: call this something different
+def return_activations(df, model, tokenizer, device, label_encoder_title, label_encoder_cats, save=False):
     # TODO: this is kinda ugly
     # title
     df['title_encoded'] = label_encoder_title.transform(df['title'])
@@ -119,55 +128,75 @@ def df_to_dataset(df, model, tokenizer, device, label_encoder_title, label_encod
         return [1 if i in lst else 0 for i in range(dim)]
     df['binary_labels'] = df['label_encoded'].apply(list_to_binary_vector)
 
-    Xs = []
+    hidden_states = []
     titles = []
     categories = []
     text = []
     for i, row in df.iterrows():
-        hidden_states = get_activations(row.text,tokenizer,model,device)
-        if len(hidden_states.shape) == 2: # GPT-2 will lose a dimension if there's a single token
-            hidden_states = hidden_states[:, np.newaxis, :]
-        if aggregation == "max":
-            x = np.max(hidden_states[layer,:,:], axis=0)
-        elif aggregation == "mean":
-            x = np.mean(hidden_states[layer,:,:], axis=0)
-        Xs.append(x)
+        hidden_states.append(get_activations(row.text,tokenizer,model,device))
         titles.append(row.title_encoded)
         categories.append(row.binary_labels)
         text.append(row.text)
     
+    # TODO: maybe set this up to save the activations
+    if save:
+        pass
+
+    # TODO: should prob make this a class of some sort that stores all of this stuff
+
+    return hidden_states, titles, categories, text
+
+# TODO: call this something different
+def get_hidden_states(filepath, model, tokenizer, device):
+    df = pd.read_csv(filepath)
+
+    label_encoder_title = get_fitted_label_encoder(df, labels="title")
+    label_encoder_cats = get_fitted_label_encoder(df, labels="categories")
+
+    data = return_activations(df, model, tokenizer, device, label_encoder_title, label_encoder_cats)
+
+    return data, label_encoder_title, label_encoder_cats
+
+# TODO: Set this up to handle layer = None
+def create_dataset(hidden_states, titles, categories, text, layer=-1, aggregation="max"):
+    Xs = []
+    for hs in hidden_states:
+        if len(hs.shape) == 2: # GPT-2 will lose a dimension if there's a single token
+            hs = hs[:, np.newaxis, :]
+
+        if layer is None:
+            hs = hs.reshape(1,hs.shape[1],-1).squeeze(0)
+        else:
+            hs = hs[layer,:,:]
+
+        if aggregation == "max":
+            x = np.max(hs, axis=0)
+        elif aggregation == "mean":
+            x = np.mean(hs, axis=0)
+
     Xs_t = Tensor(np.asarray(Xs)).float()
     titles_t = Tensor(np.asarray(titles)).long() # cross entropy loss wants a long dtype
     categories_t = Tensor(np.asarray(categories)).float() # binary cross entropy loss wants a float dtype
 
     return ActivationsDataset(Xs_t, titles_t, categories_t, text)
 
-def train_handler(model, tokenizer, device, train_data_path, val_data_path, probe_type="linear", labels="title", layer=-1, aggregation="max", batch_size=4, epochs=200, smoke_test=False, print_progress=True):
-    df_train = pd.read_csv(train_data_path)
-    df_val = pd.read_csv(val_data_path)
+def train_handler(model, train_dataset, val_dataset, label_encoder, probe_type="linear", labels="title", batch_size=4, epochs=200, print_progress=True):
+    if labels == "title":
+        n_classes = len(train_dataset.titles.unique())
+    elif labels == "categories":
+        n_classes = len(train_dataset.categores.unique())
 
-    # TODO: add a smoke test option here - this doesn't work because of missing categories
-    if smoke_test:
-        df_train = df_train[:50]
-        df_val = df_val[:4]
-
-    label_encoder_title = get_fitted_label_encoder(df_train, labels="title")
-    label_encoder_cats = get_fitted_label_encoder(df_train, labels="categories")
-
-    train_dataset = df_to_dataset(df_train, model, tokenizer, device, label_encoder_title, label_encoder_cats, aggregation=aggregation, layer=layer)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-
-    val_dataset = df_to_dataset(df_val, model, tokenizer, device, label_encoder_title, label_encoder_cats, aggregation=aggregation, layer=layer)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 
     if probe_type == "linear":
-        probe = Linear(hidden_size=model.config.hidden_size, n_classes=len(label_encoder_title.classes_))
+        probe = Linear(hidden_size=model.config.hidden_size, n_classes=n_classes)
     elif probe_type == "mlp":
-        probe = MLP(hidden_size=model.config.hidden_size, n_classes=len(label_encoder_title.classes_))
+        probe = MLP(hidden_size=model.config.hidden_size, n_classes=n_classes)
     probe.apply(init_weights)
 
     if labels == "categories":
-        criterion = BCEWithLogitsLoss(pos_weight=Tensor(torch.ones(len(label_encoder_cats.classes_)) * 20))
+        criterion = BCEWithLogitsLoss(pos_weight=Tensor(torch.ones(n_classes * 20)))
     elif labels == "title":
         criterion = nn.CrossEntropyLoss()
 
@@ -210,7 +239,7 @@ def train_handler(model, tokenizer, device, train_data_path, val_data_path, prob
                     correct += (graded_preds).sum().item()
                     # TODO: set this up to be the correct encoder depending on label
                     if epoch + 1 == epochs and print_progress:
-                        for txt, lbl, pred in zip(text, label_encoder_title.inverse_transform(lbls), label_encoder_title.inverse_transform(predicted_labels)):
+                        for txt, lbl, pred in zip(text, label_encoder.inverse_transform(lbls), label_encoder.inverse_transform(predicted_labels)):
                             print("text: ", txt)
                             print("labels: ", lbl)
                             print("predicted labels: ", pred)
