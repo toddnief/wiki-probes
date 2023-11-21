@@ -203,7 +203,7 @@ def create_dataset(hidden_states, titles, categories, text, layer=-1, aggregatio
     return ActivationsDataset(Xs_t, titles_t, categories_t, text)
 
 
-def train_handler(model, train_dataset, val_dataset, label_encoder, probe_type="linear", labels="title", batch_size=4,
+def train_handler(train_dataset, val_dataset, label_encoder, probe_type="linear", labels="title", batch_size=4,
                   epochs=200, print_progress=True):
     if labels == "title":
         n_classes = len(train_dataset.titles.unique())
@@ -251,7 +251,6 @@ def train_handler(model, train_dataset, val_dataset, label_encoder, probe_type="
             val_loss = 0.0
             val_total = 0
             correct = 0
-            incorrect_examples = []
             probe.eval()
             with torch.no_grad():
                 for i, data in enumerate(val_loader):
