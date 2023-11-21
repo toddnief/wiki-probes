@@ -178,6 +178,8 @@ def create_dataset(hidden_states, titles, categories, text, layer=-1, aggregatio
         elif aggregation == "mean":
             x = np.mean(hs, axis=0)
 
+        # TODO: add some PCA or dimensionality reduction or feature selection options here
+
         Xs.append(x)
 
     Xs_t = Tensor(np.asarray(Xs)).float()
@@ -202,6 +204,8 @@ def train_handler(model, train_dataset, val_dataset, label_encoder, probe_type="
     elif probe_type == "mlp":
         probe = MLP(hidden_size=hidden_size, n_classes=n_classes)
     probe.apply(init_weights)
+    # TODO: add a LASSO option
+    # Or does AdamW kind of do this already?
 
     if labels == "categories":
         criterion = BCEWithLogitsLoss(pos_weight=Tensor(torch.ones(n_classes * 20)))
