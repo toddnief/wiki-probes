@@ -204,7 +204,7 @@ def create_dataset(hidden_states, titles, categories, text, layer=-1, aggregatio
 
 
 def train_handler(train_dataset, val_dataset, label_encoder, probe_type="linear", labels="title", batch_size=4,
-                  epochs=200, print_progress=True):
+                  epochs=200, print_progress=True, lam=.1, regularization="l1"):
     if labels == "title":
         n_classes = len(train_dataset.titles.unique())
         criterion = nn.CrossEntropyLoss()
@@ -243,6 +243,12 @@ def train_handler(train_dataset, val_dataset, label_encoder, probe_type="linear"
             optimizer.zero_grad()
             outputs = probe(inputs)
             loss = criterion(outputs, lbls)
+            if regularization == "l1":
+                l1_reg = torch.norm(probe.fc1.weight, p=1)
+                if probe.fc1.bias is not None:
+                    l1_reg += torch.norm(probe.fc1.bias, p=1)
+                l1_reg = l1_reg.detach() # remove from computation graph
+                loss += lam * l1_reg
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
@@ -266,12 +272,12 @@ def train_handler(train_dataset, val_dataset, label_encoder, probe_type="linear"
                     graded_preds = predicted_labels == lbls
                     correct += graded_preds.sum().item()
                     # TODO: set this up to be the correct encoder depending on label
-                    if epoch + 1 == epochs and print_progress:
-                        for txt, lbl, pred in zip(text, label_encoder.inverse_transform(lbls),
-                                                  label_encoder.inverse_transform(predicted_labels)):
-                            print("text: ", txt)
-                            print("labels: ", lbl)
-                            print("predicted labels: ", pred)
+                    # if epoch + 1 == epochs and print_progress:
+                    #     for txt, lbl, pred in zip(text, label_encoder.inverse_transform(lbls),
+                    #                               label_encoder.inverse_transform(predicted_labels)):
+                    #         print("text: ", txt)
+                    #         print("labels: ", lbl)
+                    #         print("predicted labels: ", pred)
                     val_total += lbls.size()[0]
                     val_accuracy = correct / val_total
             if print_progress:
