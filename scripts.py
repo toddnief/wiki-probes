@@ -13,6 +13,12 @@ from torch.utils.data import DataLoader, Dataset
 
 
 class ActivationsDataset(Dataset):
+    '''
+    PyTorch Dataset for storing activations from an LLM trained on Wikipedia data.
+
+    __get_item__ returns a tuple of activations, the titel of the article, the 
+    category of the article, and the text of the article.
+    '''
     def __init__(self, Xs, titles, categories, text):
         self._Xs = Xs
         self._titles = titles
@@ -39,6 +45,9 @@ class ActivationsDataset(Dataset):
 
 
 class Linear(nn.Module):
+    '''
+    A linear probe with a single fully connected layer.
+    '''
     # TODO: figure out better way to handle the number of classes for default
     def __init__(self, hidden_size, n_classes):
         super().__init__()
@@ -51,6 +60,9 @@ class Linear(nn.Module):
 
 
 class MLP(nn.Module):
+    '''
+    A multilayer perceptron probe with two fully connected layers
+    '''
     def __init__(self, hidden_size, n_classes):
         super().__init__()
         self.fc1 = nn.Linear(hidden_size, 120)
@@ -87,6 +99,11 @@ def get_activations(prompts, tokenizer, model, device, layer="all"):
 
 
 def get_fitted_label_encoder(df, labels):
+    '''
+    Fits a label encoder to either titles or categories for Wikipedia articles.
+
+    For categories, we are allowing multiple labels per example (ie each category)
+    '''
     if labels == "categories":
         from ast import literal_eval
         unique_labels = set()
@@ -147,7 +164,8 @@ def return_activations(df, model, tokenizer, device, label_encoder_title, label_
     categories = []
     text = []
     for i, row in df.iterrows():
-        hidden_states.append(get_activations(row.text, tokenizer, model, device))
+        hidden_state = get_activations(row.text, tokenizer, model, device)
+        hidden_states.append(hidden_state)
         titles.append(row.title_encoded)
         categories.append(row.binary_labels)
         text.append(row.text)
@@ -174,13 +192,17 @@ def get_hidden_states(filepath, model, tokenizer, device):
 
 
 # TODO: Set this up to handle layer = None
-def create_dataset(hidden_states, titles, categories, text, layer=-1, aggregation="max"):
+def create_dataset(hidden_states, titles, categories, text, layer=-1, token=-1, aggregation="max"):
     Xs = []
     for hs in hidden_states:
         if len(hs.shape) == 2:  # GPT-2 will lose a dimension if there's a single token
             hs = hs[:, np.newaxis, :]
 
-        if layer is None:
+        # TODO: fix this and figure out how to take a slice
+        if token != -1:
+            hs = hs[:,token,:]
+
+        if layer==-1:
             hs = hs.reshape(1, hs.shape[1], -1).squeeze(0)
         else:
             hs = hs[layer, :, :]
