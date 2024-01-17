@@ -51,12 +51,23 @@ class Linear(nn.Module):
     # TODO: figure out better way to handle the number of classes for default
     def __init__(self, hidden_size, n_classes):
         super().__init__()
-        self.fc1 = nn.Linear(hidden_size, n_classes)
+        self.hidden_size = hidden_size
+        self.n_classes = n_classes
+        self.fc1 = nn.Linear(self.hidden_size, self.n_classes)
 
     def forward(self, x):
         x = torch.flatten(x, 1)  # flatten all dimensions except batch
         x = self.fc1(x)
         return x
+    
+    def save_model(self, path):
+        torch.save({
+            'state_dict': self.state_dict(),
+            'config': {
+                'hidden_size': self.hidden_size,
+                'n_classes': self.n_classes
+            }
+        }, path)
 
 
 class MLP(nn.Module):
